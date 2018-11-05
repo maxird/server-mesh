@@ -5,12 +5,12 @@ const os = require('os')
 const request = require('request-promise-native')
 const uuid = require('uuid')
 
-const DOWNSTREAM = (process.env.DOWNSTREAM || '').split(',').map(k => k.trim()).filter(k => k.length > 0).map(k => `http://${k}/`)
-if (DOWNSTREAM.length <= 0) {
-  console.error('no environment variable for DOWNSTREAM')
+const UPSTREAM = (process.env.UPSTREAM || '').split(',').map(k => k.trim()).filter(k => k.length > 0).map(k => `http://${k}/`)
+if (UPSTREAM.length <= 0) {
+  console.error('no environment variable for UPSTREAM')
   process.exit(1)
 }
-console.log(DOWNSTREAM)
+console.log(UPSTREAM)
 
 const server = restify.createServer({})
 
@@ -66,7 +66,7 @@ server.get('/health', (req, res, next) => {
   return next()
 })
 
-const callDownstream = (req, url) => {
+const callUpstream = (req, url) => {
   const block = requestBlock(req, url)
   const result = { url, ok: true, time: 0, message: '' }
   const START = Date.now()
@@ -86,9 +86,18 @@ const callDownstream = (req, url) => {
     })
 }
 
-const callAllDownstream = req => {
-  const list = DOWNSTREAM.map(d => callDownstream(req, d))
+const callAllUpstream = req => {
+  const list = UPSTREAM.map(d => callUpstream(req, d))
   return Promise.all(list)
+}
+
+const dumpCaller = req => {
+  // console.log(req)
+  console.log(`${req.connection.remoteAddress} => ${req.method} ${req.url}`)
+  Object.keys(req.headers).forEach(h => {
+    console.log(`  ${h} => ${req.headers[h]}`)
+  })
+  return req
 }
 
 server.get('/', (req, res, next) => {
@@ -101,7 +110,8 @@ server.get('/', (req, res, next) => {
   }
 
   return Promise.resolve(req)
-    .then(callAllDownstream)
+    .then(dumpCaller)
+    .then(callAllUpstream)
     .then(results => {
       data.results = results
       return data
@@ -119,6 +129,20 @@ server.get('/', (req, res, next) => {
       res.write(body)
       res.end()
       return next()
+    })
+    .catch(err => {
+      console.log(err.message)
+      const body = JSON.stringify({
+        error: err.message
+      })
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      })
+
+      res.write(body)
+      res.end()
+      return next(false)
     })
 })
 
