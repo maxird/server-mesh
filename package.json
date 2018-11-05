@@ -1,0 +1,17 @@
+{
+  "name": "server-mesh",
+  "version": "0.9.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "ryan",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "restify": "latest",
+    "request": "latest",
+    "request-promise-native": "latest",
+    "uuid": "latest"
+  }
+}
