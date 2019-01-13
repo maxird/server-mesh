@@ -1,5 +1,5 @@
-'use strict'
-
+// @ts-check
+//
 const restify = require('restify')
 const os = require('os')
 const request = require('request-promise-native')
@@ -12,7 +12,17 @@ if (UPSTREAM.length <= 0) {
 }
 console.log(UPSTREAM)
 
-const server = restify.createServer({})
+const NAME = process.env.NAME || 'unnamed'
+const server = restify.createServer({
+  name: NAME,
+  // as a demo, let's format responses
+  //
+  formatters: {
+    'application/json': (req, res, body) => {
+      return JSON.stringify(body, null, 2)
+    }
+  }
+})
 
 const networks = () => {
   const info = os.networkInterfaces()
@@ -25,6 +35,25 @@ const networks = () => {
     })
   })
   return list
+}
+
+function healthy() {
+  return { healthy: true }
+}
+
+function ready() {
+  const result = Object.assign({}, healthy(), { ready: false })
+
+  // skip out if we are not healthy
+  //
+  if (!result.healthy)
+    return result
+
+  // now decide if we are ready
+  //
+  result.ready = true
+
+  return result
 }
 
 const requestBlock = (req, url) => {
@@ -55,14 +84,16 @@ const requestBlock = (req, url) => {
 }
 
 server.get('/health', (req, res, next) => {
-  const body = JSON.stringify({ ok: true }) + '\n'
+  const body = healthy()
+  const status = body.healthy ? 200 : 503
+  res.json(status, body)
+  return next()
+})
 
-  res.writeHead(200, {
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(body)
-  })
-  res.write(body)
-  res.end()
+server.get('/ready', (req, res, next) => {
+  const body = ready()
+  const status = body.ready ? 200 : 503
+  res.json(status, body)
   return next()
 })
 
@@ -92,7 +123,6 @@ const callAllUpstream = req => {
 }
 
 const dumpCaller = req => {
-  // console.log(req)
   console.log(`${req.connection.remoteAddress} => ${req.method} ${req.url}`)
   Object.keys(req.headers).forEach(h => {
     console.log(`  ${h} => ${req.headers[h]}`)
@@ -104,7 +134,8 @@ server.get('/', (req, res, next) => {
   const now = (new Date()).toISOString()
   const data = {
     ts: `${now}`,
-    name: os.hostname(),
+    name: `${NAME}`,
+    host: os.hostname(),
     net: networks(),
     headers: req.headers
   }
@@ -116,36 +147,19 @@ server.get('/', (req, res, next) => {
       data.results = results
       return data
     })
-    .then(data => {
-      const body = JSON.stringify(data, null, 2) + '\n'
+    .catch(err => {
+      console.log(err.message)
+      const body = {
+        error: err.message
+      }
       return body
     })
     .then(body => {
-      res.writeHead(200, {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
-      })
-
-      res.write(body)
-      res.end()
+      res.json(200, body)
       return next()
-    })
-    .catch(err => {
-      console.log(err.message)
-      const body = JSON.stringify({
-        error: err.message
-      })
-      res.writeHead(200, {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body)
-      })
-
-      res.write(body)
-      res.end()
-      return next(false)
     })
 })
 
-server.listen(process.env.PORT || 3000, '0.0.0.0', (err) => {
+server.listen(process.env.PORT || 80, '0.0.0.0', (err) => {
   console.log(`listening on ${server.name} at ${server.url}`)
 })
